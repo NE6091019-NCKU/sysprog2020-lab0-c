@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "harness.h"
 #include "queue.h"
@@ -12,16 +13,27 @@
 queue_t *q_new()
 {
     queue_t *q = malloc(sizeof(queue_t));
-    /* TODO: What if malloc returned NULL? */
+    if (!q)
+        return NULL;
     q->head = NULL;
+    q->tail = NULL;
+    q->size = 0;
     return q;
 }
 
 /* Free all storage used by queue */
 void q_free(queue_t *q)
 {
-    /* TODO: How about freeing the list elements and the strings? */
-    /* Free queue structure */
+    if (!q) {
+        return;
+    }
+
+    while (q->head) {
+        list_ele_t* rm_node = q->head;
+        q->head = q->head->next;
+        free(rm_node->value);
+        free(rm_node);
+    }
     free(q);
 }
 
@@ -35,12 +47,42 @@ void q_free(queue_t *q)
 bool q_insert_head(queue_t *q, char *s)
 {
     list_ele_t *newh;
-    /* TODO: What should you do if the q is NULL? */
+
+    /*
+     * DO NOT do this check after malloc
+     * Memory leak is prone to happen
+     */
+    if (!q) {
+        return false;
+    }
+
     newh = malloc(sizeof(list_ele_t));
-    /* Don't forget to allocate space for the string and copy it */
-    /* What if either call to malloc returns NULL? */
-    newh->next = q->head;
-    q->head = newh;
+    if (!newh) {
+        return false;
+    }
+    newh->next = NULL;
+    newh->value = NULL;
+
+    /*
+     * Extra 1 bytes for '\0'
+     * Is calling strlen(s) bad for performance ??
+     */
+    size_t copy_size = (sizeof(char) * strlen(s)) + (sizeof(char) * 1);
+    newh->value = (char*) malloc(copy_size);
+    if (!newh->value) {
+        /* Failed to construct newh, free it! */
+        free(newh);
+        return false;
+    }
+    memcpy(newh->value, s, copy_size);
+
+    if (!q->head) {
+        q->head = q->tail = newh;
+    } else {
+        newh->next = q->head;
+        q->head = newh;
+    }
+    q->size += 1;
     return true;
 }
 
@@ -53,10 +95,40 @@ bool q_insert_head(queue_t *q, char *s)
  */
 bool q_insert_tail(queue_t *q, char *s)
 {
-    /* TODO: You need to write the complete code for this function */
-    /* Remember: It should operate in O(1) time */
-    /* TODO: Remove the above comment when you are about to implement. */
-    return false;
+    list_ele_t* newt;
+
+    if (!q) {
+        return false;
+    }
+
+    newt = malloc(sizeof(list_ele_t));
+    if (!newt) {
+        return false;
+    }
+    newt->next = NULL;
+    newt->value = NULL;
+
+    /*
+     * Extra 1 bytes for '\0'
+     * Is calling strlen(s) bad for performance ??
+     */
+    size_t copy_size = (sizeof(char) * strlen(s)) + (sizeof(char) * 1);
+    newt->value = (char*) malloc(copy_size);
+    if (!newt->value) {
+        /* Failed to construct newt, free it! */
+        free(newt);
+        return false;
+    }
+    memcpy(newt->value, s, copy_size);
+
+    if (!q->tail) {
+        q->head = q->tail = newt;
+    } else {
+        q->tail->next = newt;
+        q->tail = newt;
+    }
+    q->size += 1;
+    return true;
 }
 
 /*
@@ -69,9 +141,26 @@ bool q_insert_tail(queue_t *q, char *s)
  */
 bool q_remove_head(queue_t *q, char *sp, size_t bufsize)
 {
-    /* TODO: You need to fix up this code. */
-    /* TODO: Remove the above comment when you are about to implement. */
+    if (!q || !q->head) {
+        return false;
+    }
+
+    list_ele_t* rm_node = q->head;
     q->head = q->head->next;
+    q->size -= 1;
+    if (!q->head) {
+        q->tail = NULL;
+    }
+
+    size_t copy_size = (sizeof(char) * strlen(rm_node->value)) + (sizeof(char) * 1);
+    if (sp)
+    {
+        memcpy(sp, rm_node->value, copy_size <= bufsize ? copy_size : bufsize);
+        sp[bufsize-1] = '\0';
+    }
+
+    free(rm_node->value);
+    free(rm_node);
     return true;
 }
 
@@ -81,10 +170,9 @@ bool q_remove_head(queue_t *q, char *sp, size_t bufsize)
  */
 int q_size(queue_t *q)
 {
-    /* TODO: You need to write the code for this function */
-    /* Remember: It should operate in O(1) time */
-    /* TODO: Remove the above comment when you are about to implement. */
-    return 0;
+    if (!q)
+        return 0;
+    return q->size;
 }
 
 /*
@@ -96,8 +184,68 @@ int q_size(queue_t *q)
  */
 void q_reverse(queue_t *q)
 {
-    /* TODO: You need to write the code for this function */
-    /* TODO: Remove the above comment when you are about to implement. */
+    if (!q || !q->head) {
+        return;
+    }
+
+    q->tail = q->head;
+    
+    list_ele_t* cur = q->head->next;
+    while (cur) {
+        list_ele_t* prev = q->head;
+        q->head = cur;
+        cur = cur->next;
+        q->head->next = prev;
+    }
+    q->tail->next = NULL;
+}
+
+/*
+ * Sort linked list
+ * Return the head of linked list
+ */
+static list_ele_t* q_sort_mergesort(list_ele_t* p1)
+{
+    if (!p1->next)
+        return p1;
+    list_ele_t* stp1 = p1;
+    list_ele_t* stp2 = p1->next;
+    while (stp2 && stp2->next) {
+        stp1 = stp1->next;
+        stp2 = stp2->next->next;
+    }
+    list_ele_t* p2 = stp1->next;
+    stp1->next = NULL;
+
+    p1 = q_sort_mergesort(p1);
+    p2 = q_sort_mergesort(p2);
+
+    /* make *p1 < *p2, i.e., make p1 be the head of list */
+    if (strcmp(p1->value, p2->value) > 0) {
+        list_ele_t* tmp = p1;
+        p1 = p2;
+        p2 = tmp;
+    }
+    list_ele_t* ret_head = p1;
+    list_ele_t* p3 = p1->next;
+
+    /* p1 is the smallest among the three, p2 or p3 is p1's successor */
+    while (p2 && p3) {
+        int res = strcmp(p2->value, p3->value);
+        if (res < 0) {
+            p1->next = p2;
+            p1 = p2;
+            p2 = p2->next;
+        }
+        else {
+            p1->next = p3;
+            p1 = p3;
+            p3 = p3->next;
+        }
+    }
+    p1->next = p2 ? p2 : p3;
+
+    return ret_head;
 }
 
 /*
@@ -107,6 +255,65 @@ void q_reverse(queue_t *q)
  */
 void q_sort(queue_t *q)
 {
-    /* TODO: You need to write the code for this function */
-    /* TODO: Remove the above comment when you are about to implement. */
+    if (q_size(q) <= 1)
+        return;
+
+    q->head = q_sort_mergesort(q->head);
+
+    /* O(n) reconstruct q->tail */
+    while (q->tail->next)
+    {
+        q->tail = q->tail->next;
+    }
 }
+
+
+// void merge_sort(list_ele_t **head)
+// {
+//     if (!(*head) || !((*head)->next))
+//         return;
+
+//     list_ele_t *l1 = (*head)->next;  
+//     list_ele_t *l2 = *head;          
+
+//     while (l1 && l1->next) {
+//         l2 = l2->next;
+//         l1 = l1->next->next;
+//     }
+//     l1 = l2->next;
+//     l2->next = NULL;
+//     l2 = *head;
+
+//     merge_sort(&l2);
+//     merge_sort(&l1);
+
+//     *head = NULL;
+//     list_ele_t **tmp = head;
+
+//     while (l1 && l2) {
+//         if (strcmp(l1->value, l2->value) < 0) {  
+//             *tmp = l1;
+//             l1 = l1->next;
+//         } else {
+//             *tmp = l2;
+//             l2 = l2->next;
+//         }
+//         tmp = &((*tmp)->next);
+//     }
+
+//     *tmp = l1 ? l1 : l2;
+// }
+
+// void q_sort(queue_t *q)
+// {
+//     // if q has only one element or q is empty, q->head == q->tail
+//     if (!q || q->head == q->tail) {
+//         return;
+//     }
+
+//     merge_sort(&q->head);
+
+//     while (q->tail->next) {
+//         q->tail = q->tail->next;
+//     }
+// }
